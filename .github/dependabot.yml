@@ -1,0 +1,173 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/cod// background.js
+
+async function injectCode(code, injectionTarget) {
+    try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const activeTab = tabs[0];
+        if (!activeTab || !activeTab.id) {
+            console.error("No active tab found.");
+            return;
+        }
+
+        await chrome.scripting.executeScript({
+            target: { tabId: activeTab.id },
+            func: (codeToInject, target) => {
+                let targetElement;
+                try {
+                    if (target === "head") {
+                        targetElement = document.head;
+                    } else if (target === "body") {
+                        targetElement = document.body;
+                    } else {
+                        targetElement = document.querySelector(target);
+                        if (!targetElement) {
+                            throw new Error(`Target element not found: ${target}`);
+                        }
+                    }
+
+                    // Add robust handling of pre-existing scripts (prevents duplication errors)
+                    const existingScripts = targetElement.querySelectorAll('script');
+                    if (existingScripts.length > 0) { // Only warn if there are scripts, no warning with 0
+                        console.warn('Multiple Script Insertion Detected!', `Code injection script will overwrite previous ones`)
+                    }
+
+
+                    const scriptElement = document.createElement('script');
+                    scriptElement.textContent = codeToInject;
+                    targetElement.appendChild(scriptElement);
+
+
+                } catch (injectionError) {
+                    console.error("Error injecting code into Wix context:", injectionError);
+                    // Possibly rethrow here for outer handling or handle specifically
+                }
+            },
+            args: [code, injectionTarget],
+        });
+
+    } catch (error) {
+        console.error("Error in background.js code injection handling:", error);
+        throw error // Crucial: rethrow to allow top-level handlers to address injection error conditions (especially necessary in this context.)
+    }
+}
+
+
+async function fetchCodeFromGemini(prompt, apiKey) { // Better error handling
+try {
+    const response = await fetch('https://api.gemini.com/v1/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            prompt: prompt,
+            model: 'gemini-pro',
+            max_tokens: 1024, // A reasonable and non-trivial limit.
+            temperature: 0.5, // Tuning parameter to be updated/used appropriately if helpful
+        }),
+    });
+
+
+    if (!response.ok) {
+        const errorData = await response.json(); // Attempt to parse for richer info
+        let message = `Error fetching code: ${response.status}`;
+
+        if (errorData && errorData.error) {
+            message += ` - ${errorData.error}`;
+        }
+        throw new Error(message);
+    }
+
+    const data = await response.json();
+
+
+   // Validate the response structure
+   if (!data || !data.choices || data.choices.length === 0 || !data.choices[0].text) {
+        const errorDetails = JSON.stringify(data, null, 2);
+        const errorDescription = `Unexpected Gemini API response: ${errorDetails}`;
+        throw new Error(errorDescription);
+   }
+
+    return data.choices[0].text;
+} catch (error) {
+    console.error("Error from fetchCodeFromGemini", error);
+    throw error;  // Re-throw for appropriate upper level handlers
+}
+}
+
+
+
+
+
+// Important:  Your function definition – adapt this if needed for your code generation format
+const generateWixCodeFunction = {
+  name: "generate_wix_code",
+  description: "Generates Wix App code.",
+  parameters: {
+      type: "object",
+      properties: {
+          prompt: { type: "string", description: "The prompt describing the desired code" },
+          target: { type: "string", description: "Optional - The CSS selector for the target location for injection ('head', 'body' or a selector). Defaults to 'body'", default: "body" },
+      },
+      required: ["prompt"]
+  }
+};
+
+
+async function handleFunctionCall(functionName, args, apiKey) {
+    if (functionName === "generate_wix_code") {
+      const prompt = `Generate Wix App code based on the prompt and use this target location for insertion:\n${args.prompt} - \n${JSON.stringify(args.target)}`;
+
+      try {
+
+        const code = await fetchCodeFromGemini(prompt, apiKey);
+
+        injectCode(code, args.target || "body");
+      } catch (error) {
+          console.error("Error from generating or inserting the code:", error);
+
+      }
+
+
+}
+
+}
+
+
+
+
+
+chrome.runtime.onMessage.addListener(
+    async (request, sender, sendResponse) => {
+        if (request.action === "injectCode") {
+          try{
+            await injectCode(request.code, request.target)
+          sendResponse({ success: true });}catch(err){sendResponse({success:false,error:err.message})}
+
+        } else if (request.action === "callFunction") {
+            const apiKey = await chrome.storage.local.get("apiKey").then(res => res.apiKey);
+                if (!apiKey) {throw new Error("Please Set API Key first")}
+
+
+            handleFunctionCall(request.functionName, request.arguments, apiKey);
+
+
+            sendResponse({ success: true });
+
+
+                return true; // Necessary for asynchronous responses!
+            }
+
+    }
+);e-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  - package-ecosystem: "" # See documentation for possible values
+    directory: "/" # Location of package manifests
+    schedule:
+      interval: "weekly"
