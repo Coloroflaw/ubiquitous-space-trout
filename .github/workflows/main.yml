@@ -1,0 +1,39 @@
+name: Wix Code Generator Extension Build
+
+on:
+  push:
+    branches:
+      - main  # Trigger on pushes to the main branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16  # Or your desired Node version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build extension
+        #  If you use a build process (e.g., webpack, Parcel), run it here
+        #  Otherwise, just copy the necessary files to a dist directory
+        run: |
+          mkdir dist
+          cp -r manifest.json popup.html popup.js background.js content.js icons dist/ 
+          # ... copy other assets (images, CSS, etc.)
+
+      - name: Zip extension
+        run: zip -r wix-code-generator.zip dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: wix-code-generator-extension
+          path: wix-code-generator.zip
